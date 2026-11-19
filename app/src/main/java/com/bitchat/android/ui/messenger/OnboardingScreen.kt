@@ -5,6 +5,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -446,6 +447,7 @@ fun SaturnInteractiveNextButton(
     }
 }
 
+
 @Composable
 private fun StepDotsIndicator(totalSteps: Int, currentIndex: Int) {
     Row(
@@ -459,4 +461,135 @@ private fun StepDotsIndicator(totalSteps: Int, currentIndex: Int) {
                 modifier = Modifier
                     .height(8.dp)
                     .width(if (isActive) 22.dp else 8.dp)
-                    .clip
+                    .clip(CircleShape)
+                    .background(
+                        when {
+                            isActive -> SaturnInk
+                            isDone -> SaturnSage
+                            else -> SaturnSand
+                        }
+                    )
+            )
+        }
+    }
+}
+
+@Composable
+private fun SaturnMascotStage(step: SaturnOnboardingStep) {
+    val badgeColor = when (step) {
+        SaturnOnboardingStep.IDENTITY -> SaturnYellow
+        SaturnOnboardingStep.NEARBY_PERMISSIONS -> SaturnSkyBlue
+        SaturnOnboardingStep.LOCATION_SWITCH -> SaturnPeach
+        SaturnOnboardingStep.BATTERY_AWAKE -> SaturnSage
+    }
+    val caption = when (step) {
+        SaturnOnboardingStep.IDENTITY -> "No phone number needed"
+        SaturnOnboardingStep.NEARBY_PERMISSIONS -> "Peer-to-peer radar ready"
+        SaturnOnboardingStep.LOCATION_SWITCH -> "Required by Android"
+        SaturnOnboardingStep.BATTERY_AWAKE -> "You've got this!"
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .size(176.dp)
+                .clip(RoundedCornerShape(32.dp))
+                .background(SaturnSurface)
+                .border(2.dp, SaturnInk, RoundedCornerShape(32.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.size(110.dp)) {
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                val r = size.minDimension * 0.36f
+                drawCircle(color = badgeColor, radius = r, center = Offset(cx, cy))
+                drawCircle(
+                    color = SaturnInk,
+                    radius = r,
+                    center = Offset(cx, cy),
+                    style = Stroke(width = 3.dp.toPx())
+                )
+                drawCircle(SaturnInk, radius = 4.dp.toPx(), center = Offset(cx - 14.dp.toPx(), cy - 4.dp.toPx()))
+                drawCircle(SaturnInk, radius = 4.dp.toPx(), center = Offset(cx + 14.dp.toPx(), cy - 4.dp.toPx()))
+                drawCircle(SaturnPeach, radius = 6.dp.toPx(), center = Offset(cx - 22.dp.toPx(), cy + 6.dp.toPx()))
+                drawCircle(SaturnPeach, radius = 6.dp.toPx(), center = Offset(cx + 22.dp.toPx(), cy + 6.dp.toPx()))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Surface(
+            color = SaturnSurface,
+            shape = RoundedCornerShape(100.dp),
+            border = BorderStroke(1.5.dp, SaturnSand)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = SaturnInk,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = caption,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = SaturnInk,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackgroundDoodles(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        drawCircle(
+            color = SaturnPeach.copy(alpha = 0.25f),
+            radius = 64.dp.toPx(),
+            center = Offset(size.width * 0.92f, size.height * 0.08f),
+            style = Stroke(width = 3.dp.toPx())
+        )
+        drawCircle(
+            color = SaturnSage.copy(alpha = 0.30f),
+            radius = 80.dp.toPx(),
+            center = Offset(size.width * 0.08f, size.height * 0.92f),
+            style = Stroke(width = 3.dp.toPx())
+        )
+        val sx = size.width * 0.14f
+        val sy = size.height * 0.34f
+        val sr = 10.dp.toPx()
+        val starPath = Path().apply {
+            moveTo(sx, sy - sr)
+            lineTo(sx, sy + sr)
+            moveTo(sx - sr, sy)
+            lineTo(sx + sr, sy)
+        }
+        drawPath(starPath, color = SaturnYellow, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
+@Composable
+private fun SaturnOnboardingPreview() {
+    var step by remember { mutableStateOf(SaturnOnboardingStep.IDENTITY) }
+    var name by remember { mutableStateOf("Saatvik") }
+    SaturnOnboardingScreen(
+        currentStep = step,
+        nickname = name,
+        onNicknameChange = { name = it },
+        onPrimaryAction = {
+            val next = (step.index + 1) % SaturnOnboardingStep.entries.size
+            step = SaturnOnboardingStep.entries[next]
+        },
+        onSkipStep = {
+            val next = (step.index + 1) % SaturnOnboardingStep.entries.size
+            step = SaturnOnboardingStep.entries[next]
+        }
+    )
+}

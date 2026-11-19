@@ -2,22 +2,31 @@ package com.bitchat.android.ui.messenger
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
@@ -25,22 +34,28 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.bitchat.android.services.AppStateStore
 import com.bitchat.android.ui.ChatViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 data class SaturnThreadItem(
     val id: String,
@@ -66,7 +81,7 @@ private enum class ActiveHomeSheet {
 @Composable
 fun HomeScreen(
     chatViewModel: ChatViewModel,
-    founderName: String = "Founder Name",
+    founderName: String = "Saatvik Vuppala",
     creatorDockLinks: List<SaturnDockLink> = listOf(
         SaturnDockLink("Email", "mailto:hello@saturn.app", Icons.Default.Email, SaturnPeach),
         SaturnDockLink("GitHub", "https://github.com", Icons.Default.Code, SaturnYellow),
@@ -76,7 +91,9 @@ fun HomeScreen(
     onOpenChat: (id: String, title: String, isGroup: Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val conversations by chatViewModel.conversations.collectAsState()
+    val privateChats by chatViewModel.privateChats.collectAsState()
     val joinedChannels by chatViewModel.joinedChannels.collectAsState()
     val channelMessages by chatViewModel.channelMessages.collectAsState()
     val unreadChannelCounts by chatViewModel.unreadChannelMessages.collectAsState()
@@ -90,18 +107,23 @@ fun HomeScreen(
     var activeSheet by remember { mutableStateOf(ActiveHomeSheet.NONE) }
     var longPressedThread by remember { mutableStateOf<SaturnThreadItem?>(null) }
     var infoDialogThread by remember { mutableStateOf<SaturnThreadItem?>(null) }
-    var myAvatarUri by remember { mutableStateOf<Uri?>(null) }
+    var myAvatarBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
 
     val avatarPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            myAvatarUri = uri
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                }
+            }.getOrNull()?.let { myAvatarBitmap = it }
         }
     }
 
     val allThreads = remember(
         conversations,
+        privateChats,
         joinedChannels,
         channelMessages,
         unreadChannelCounts,
@@ -113,12 +135,14 @@ fun HomeScreen(
         val moons = conversations.map { summary ->
             val id = summary.conversationID
             val name = displayNames[id] ?: summary.displayName.ifBlank { id.take(8) }
+            val draftPreview = summary.draft?.takeIf { it.isNotBlank() }?.let { "Draft: $it" }
+            val lastMsg = privateChats[id]?.lastOrNull()
+            val lastContent = lastMsg?.content?.takeIf { it.isNotBlank() }
             SaturnThreadItem(
                 id = id,
                 title = name,
-                subtitle = summary.draft?.takeIf { it.isNotBlank() }?.let { "Draft: $it" }
-                    ?: summary.lastMessagePreview.ifBlank { "Say hello to your Moon" },
-                timestamp = summary.lastMessageTimestamp,
+                subtitle = draftPreview ?: lastContent ?: "Say hello to your Moon",
+                timestamp = lastMsg?.timestamp?.time ?: 0L,
                 unreadCount = unreadPrivateCounts[id] ?: 0,
                 isPinned = summary.isPinned,
                 isOnline = id in connectedPeers,
@@ -179,7 +203,6 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // MagicUI Meteors + Brand Board Doodles in Saturn palette
             SaturnMeteorsAndDoodlesBackground(modifier = Modifier.fillMaxSize())
 
             Column(
@@ -189,7 +212,6 @@ fun HomeScreen(
             ) {
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Top Header: Waving Mascot + "Saturn" + (i) About + 3-dots Settings
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -221,42 +243,13 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Search Bar for Moons & Groups
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = {
-                        Text(
-                            text = "Search Moons & groups...",
-                            color = SaturnSecondaryText,
-                            fontSize = 15.sp
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = SaturnInk)
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = SaturnInk)
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(100.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = SaturnSurface,
-                        unfocusedContainerColor = SaturnSurface,
-                        focusedBorderColor = SaturnInk,
-                        unfocusedBorderColor = SaturnInk,
-                        focusedTextColor = SaturnInk,
-                        unfocusedTextColor = SaturnInk,
-                        cursorColor = SaturnInk
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                // Uiverse-inspired Animated Search Bar (Search -> Rotating Back Arrow + Clear)
+                SaturnSearchBar(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    placeholder = "Search Moons & groups..."
                 )
 
-                // Overlapping AvatarCircles Strip for Active Moons
                 val moonNames = remember(allThreads) {
                     allThreads.filter { !it.isGroup }.map { it.title }
                 }
@@ -283,7 +276,6 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Moons & Groups Feed
                 if (allThreads.isEmpty()) {
                     Box(
                         modifier = Modifier
@@ -327,7 +319,6 @@ fun HomeScreen(
         }
     }
 
-    // Long-Press Action Menu (Pin, Clear Chat, Delete, Moon/Group Info)
     longPressedThread?.let { target ->
         ModalBottomSheet(
             onDismissRequest = { longPressedThread = null },
@@ -356,7 +347,7 @@ fun HomeScreen(
                     icon = Icons.Default.PushPin,
                     label = if (target.isPinned) "Unpin" else "Pin to top",
                     onClick = {
-                        chatViewModel.togglePinConversation(target.id)
+                        chatViewModel.toggleConversationPinned(target.id)
                         longPressedThread = null
                     }
                 )
@@ -369,16 +360,6 @@ fun HomeScreen(
                     }
                 )
                 SheetActionRow(
-                    icon = Icons.Default.CleaningServices,
-                    label = "Clear chat",
-                    onClick = {
-                        if (!target.isGroup) {
-                            AppStateStore.clearPrivateConversation(target.id)
-                        }
-                        longPressedThread = null
-                    }
-                )
-                SheetActionRow(
                     icon = Icons.Default.DeleteOutline,
                     label = if (target.isGroup) "Delete group" else "Delete Moon",
                     tint = SaturnError,
@@ -386,7 +367,9 @@ fun HomeScreen(
                         if (target.isGroup) {
                             chatViewModel.leaveChannel(target.id)
                         } else {
-                            AppStateStore.removePrivateConversation(target.id)
+                            scope.launch {
+                                chatViewModel.deletePrivateConversation(target.id)
+                            }
                         }
                         longPressedThread = null
                     }
@@ -396,7 +379,6 @@ fun HomeScreen(
         }
     }
 
-    // Moon Info / Group Info Dialog
     infoDialogThread?.let { info ->
         AlertDialog(
             onDismissRequest = { infoDialogThread = null },
@@ -431,7 +413,6 @@ fun HomeScreen(
         )
     }
 
-    // Bottom Sheets for '+', Settings, and About Saturn
     when (activeSheet) {
         ActiveHomeSheet.NONE -> Unit
 
@@ -536,6 +517,15 @@ fun HomeScreen(
 
         ActiveHomeSheet.CREATE_GROUP -> {
             var groupName by remember { mutableStateOf("") }
+            val availableMoons = remember(conversations, displayNames) {
+                conversations.map { summary ->
+                    val id = summary.conversationID
+                    val name = displayNames[id] ?: summary.displayName.ifBlank { id.take(8) }
+                    id to name
+                }
+            }
+            val selectedMoonIds = remember { mutableStateMapOf<String, Boolean>() }
+
             ModalBottomSheet(
                 onDismissRequest = { activeSheet = ActiveHomeSheet.NONE },
                 containerColor = SaturnSurface
@@ -555,6 +545,40 @@ fun HomeScreen(
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    if (availableMoons.isNotEmpty()) {
+                        Text(
+                            text = "Invite Moons to Orbit",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SaturnSecondaryText
+                        )
+                        availableMoons.forEach { (moonId, moonName) ->
+                            val isChecked = selectedMoonIds[moonId] == true
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(SaturnSurfaceSecondary)
+                                    .border(1.5.dp, SaturnInk, RoundedCornerShape(16.dp))
+                                    .clickable { selectedMoonIds[moonId] = !isChecked }
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = moonName,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SaturnInk,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                SaturnHandDrawnCheckbox(
+                                    checked = isChecked,
+                                    onCheckedChange = { selectedMoonIds[moonId] = it }
+                                )
+                            }
+                        }
+                    }
+
                     SaturnRippleButton(
                         text = "Create Group",
                         enabled = groupName.trim().isNotEmpty(),
@@ -597,7 +621,6 @@ fun HomeScreen(
                     ) {
                         Text("Your Profile", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = SaturnInk)
 
-                        // Default: First letter of nickname in uppercase; Tap to upload photo
                         Box(
                             modifier = Modifier
                                 .size(88.dp)
@@ -607,9 +630,10 @@ fun HomeScreen(
                                 .clickable { avatarPickerLauncher.launch("image/*") },
                             contentAlignment = Alignment.Center
                         ) {
-                            if (myAvatarUri != null) {
-                                AsyncImage(
-                                    model = myAvatarUri,
+                            val avatar = myAvatarBitmap
+                            if (avatar != null) {
+                                Image(
+                                    bitmap = avatar,
                                     contentDescription = "Profile Picture",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
@@ -625,7 +649,6 @@ fun HomeScreen(
                         }
                         Text("Tap circle to upload photo", fontSize = 12.sp, color = SaturnSecondaryText)
 
-                        // Live TypingAnimation preview of Profile Name
                         if (editedName.isNotBlank()) {
                             SaturnTypingText(
                                 fullText = editedName,
@@ -635,7 +658,6 @@ fun HomeScreen(
                             )
                         }
 
-                        // Editable Display Name
                         OutlinedTextField(
                             value = editedName,
                             onValueChange = { editedName = it },
@@ -645,7 +667,6 @@ fun HomeScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
 
-                        // Unique Read-Only Username with TypingAnimation
                         Surface(
                             color = SaturnSurfaceSecondary,
                             shape = RoundedCornerShape(16.dp),
@@ -755,7 +776,6 @@ fun HomeScreen(
                             }
                         }
 
-                        // MagicUI Dock for Users to Reach You
                         Text(
                             text = "Say hi to the creator",
                             fontSize = 12.sp,
@@ -771,7 +791,6 @@ fun HomeScreen(
                             }
                         )
 
-                        // Invite Moons via Android Quick Share / System Share
                         SaturnRippleButton(
                             text = "Invite Moons",
                             icon = Icons.Default.Share,
@@ -781,6 +800,209 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SaturnSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholder: String = "Search Moons & groups...",
+    modifier: Modifier = Modifier
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val isActive = isFocused || query.isNotEmpty()
+
+    val iconRotation by animateFloatAsState(
+        targetValue = if (isActive) 80f else 0f,
+        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+        label = "searchIconRotation"
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (isActive) 1.2f else 1f,
+        animationSpec = tween(durationMillis = 300),
+        label = "searchIconScale"
+    )
+    val clearScale by animateFloatAsState(
+        targetValue = if (query.isNotEmpty()) 1f else 0f,
+        animationSpec = tween(durationMillis = 200),
+        label = "clearBtnScale"
+    )
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(50.dp),
+        shape = RoundedCornerShape(100.dp),
+        color = SaturnSurface,
+        border = BorderStroke(
+            width = 1.5.dp,
+            color = if (isActive) Color(0xFF15A986) else SaturnInk
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .graphicsLayer {
+                        rotationZ = iconRotation
+                        scaleX = iconScale
+                        scaleY = iconScale
+                    }
+                    .clickable(enabled = isActive) { onQueryChange("") },
+                contentAlignment = Alignment.Center
+            ) {
+                if (isActive) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color(0xFF15A986),
+                        modifier = Modifier
+                            .size(18.dp)
+                            .graphicsLayer { rotationZ = -80f }
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = SaturnInk,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = SaturnInk,
+                    fontSize = 15.sp
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .onFocusChanged { isFocused = it.isFocused },
+                decorationBox = { innerTextField ->
+                    if (query.isEmpty()) {
+                        Text(
+                            text = placeholder,
+                            fontSize = 15.sp,
+                            color = SaturnSecondaryText
+                        )
+                    }
+                    innerTextField()
+                }
+            )
+
+            if (clearScale > 0.05f) {
+                IconButton(
+                    onClick = { onQueryChange("") },
+                    modifier = Modifier
+                        .size(24.dp)
+                        .graphicsLayer {
+                            scaleX = clearScale
+                            scaleY = clearScale
+                            alpha = clearScale
+                        }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Clear search",
+                        tint = SaturnInk,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SaturnHandDrawnCheckbox(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val uncheckedShape = RoundedCornerShape(
+        topStart = 4.dp, topEnd = 12.dp, bottomEnd = 5.dp, bottomStart = 11.dp
+    )
+    val checkedShape = RoundedCornerShape(
+        topStart = 12.dp, topEnd = 4.dp, bottomEnd = 11.dp, bottomStart = 5.dp
+    )
+
+    val scale by animateFloatAsState(
+        targetValue = if (checked) 1.08f else 1f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = 400f),
+        label = "checkboxBounce"
+    )
+    val rotation by animateFloatAsState(
+        targetValue = if (checked) -2f else 0f,
+        animationSpec = spring(dampingRatio = 0.5f),
+        label = "checkboxTilt"
+    )
+    val checkDrawProgress by animateFloatAsState(
+        targetValue = if (checked) 1f else 0f,
+        animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+        label = "checkmarkSplash"
+    )
+
+    val shape = if (checked) checkedShape else uncheckedShape
+    val fillColor = if (checked) SaturnPeach else Color(0xFFFDFCF0)
+
+    Box(
+        modifier = modifier
+            .size(32.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                rotationZ = rotation
+            }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onCheckedChange(!checked) }
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .offset(x = 4.dp, y = 4.dp)
+                .background(SaturnInk, shape)
+        )
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .background(fillColor, shape)
+                .border(width = 3.dp, color = SaturnInk, shape = shape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (checkDrawProgress > 0f) {
+                Canvas(modifier = Modifier.size(16.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    val path = Path().apply {
+                        moveTo(w * 0.18f, h * 0.52f)
+                        lineTo(w * 0.42f, h * 0.76f)
+                        lineTo(w * 0.84f, h * 0.24f)
+                    }
+                    drawPath(
+                        path = path,
+                        color = SaturnInk.copy(alpha = checkDrawProgress),
+                        style = Stroke(
+                            width = 3.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round
+                        )
+                    )
                 }
             }
         }
@@ -935,7 +1157,6 @@ private fun shareInviteMoons(context: Context) {
 
 @Composable
 private fun WavingMascotPlaceholder(size: androidx.compose.ui.unit.Dp) {
-    // Swap to Image(painterResource(R.drawable.mascot_happy), ...) once exported PNG is placed in res/drawable/
     Canvas(modifier = Modifier.size(size)) {
         val cx = this.size.width / 2f
         val cy = this.size.height / 2f
@@ -949,7 +1170,6 @@ private fun WavingMascotPlaceholder(size: androidx.compose.ui.unit.Dp) {
 
 @Composable
 private fun SaturnPlanetLogoMark(size: androidx.compose.ui.unit.Dp) {
-    // Swap to Image(painterResource(R.drawable.saturn_planet_logo), ...) once exported PNG is placed in res/drawable/
     Canvas(modifier = Modifier.size(size)) {
         val cx = this.size.width / 2f
         val cy = this.size.height / 2f

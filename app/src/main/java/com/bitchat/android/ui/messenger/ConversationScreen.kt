@@ -1,6 +1,12 @@
 package com.bitchat.android.ui.messenger
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -16,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -35,6 +42,7 @@ import com.bitchat.android.services.AppStateStore
 import com.bitchat.android.ui.ChatViewModel
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 data class SaturnMascotSticker(
     val id: String,
@@ -65,6 +73,7 @@ fun ConversationScreen(
     onPickImage: () -> Unit = {},
     onToggleVoiceNote: () -> Unit = {}
 ) {
+    val scope = rememberCoroutineScope()
     val privateChats by chatViewModel.privateChats.collectAsState()
     val channelMessages by chatViewModel.channelMessages.collectAsState()
     val connectedPeers by chatViewModel.connectedPeers.collectAsState()
@@ -84,7 +93,6 @@ fun ConversationScreen(
     }
     val isOnline = !isGroup && (threadId in connectedPeers)
 
-    // Local soft-deleted message IDs ("Delete for me") & revoked IDs ("Delete for everyone")
     val deletedForMeIds = remember(threadId) { mutableStateListOf<String>() }
     val deletedForEveryoneIds = remember(threadId) { mutableStateListOf<String>() }
 
@@ -263,7 +271,6 @@ fun ConversationScreen(
                                             .padding(8.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
-                                        // Swap with Image(painterResource(R.drawable.mascot_...), ...) once PNGs are added
                                         Text("★", fontSize = 22.sp, color = SaturnInk)
                                         Text(
                                             text = sticker.label,
@@ -279,17 +286,16 @@ fun ConversationScreen(
                     }
                 }
 
-                // Bottom Composer: [Sticker Button on LEFT] + ["Saturn it" Pill with Camera & Mic] + [Send]
+                // Bottom Composer: [Sticker Button] + [Uiverse SaturnMessageBox]
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.Bottom
                 ) {
-                    // Left-side Saturn Mascot Sticker Button
                     Box(
                         modifier = Modifier
-                            .size(46.dp)
+                            .size(50.dp)
                             .clip(CircleShape)
                             .background(if (showStickerTray) SaturnYellow else SaturnSurface)
                             .border(1.5.dp, SaturnInk, CircleShape)
@@ -306,83 +312,25 @@ fun ConversationScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    OutlinedTextField(
-                        value = draftText,
-                        onValueChange = {
+                    SaturnMessageBox(
+                        text = draftText,
+                        onTextChange = {
                             draftText = it
                             if (!isGroup) chatViewModel.setConversationDraft(threadId, it)
                         },
-                        placeholder = {
-                            SaturnTypingText(
-                                fullText = "Saturn it",
-                                color = SaturnSecondaryText,
-                                fontSize = 15.sp,
-                                charDelayMs = 80L,
-                                repeatLoop = true
-                            )
-                        },
-                        trailingIcon = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(end = 6.dp)
-                            ) {
-                                IconButton(onClick = onPickImage, modifier = Modifier.size(34.dp)) {
-                                    Icon(
-                                        imageVector = Icons.Default.PhotoCamera,
-                                        contentDescription = "Camera",
-                                        tint = SaturnInk,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                                IconButton(onClick = onToggleVoiceNote, modifier = Modifier.size(34.dp)) {
-                                    Icon(
-                                        imageVector = Icons.Default.Mic,
-                                        contentDescription = "Mic",
-                                        tint = SaturnInk,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                        onSend = {
+                            val trimmed = draftText.trim()
+                            chatViewModel.sendMessage(trimmed) { accepted ->
+                                if (accepted) {
+                                    draftText = ""
+                                    if (!isGroup) chatViewModel.setConversationDraft(threadId, "")
                                 }
                             }
                         },
-                        shape = RoundedCornerShape(100.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = SaturnSurface,
-                            unfocusedContainerColor = SaturnSurface,
-                            focusedBorderColor = SaturnInk,
-                            unfocusedBorderColor = SaturnInk,
-                            focusedTextColor = SaturnInk,
-                            unfocusedTextColor = SaturnInk,
-                            cursorColor = SaturnInk
-                        ),
-                        maxLines = 4,
+                        onAttachClick = onPickImage,
+                        onMicClick = onToggleVoiceNote,
                         modifier = Modifier.weight(1f)
                     )
-
-                    if (draftText.trim().isNotEmpty()) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(SaturnPeach)
-                                .border(1.5.dp, SaturnInk, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    val trimmed = draftText.trim()
-                                    chatViewModel.sendMessage(trimmed) { accepted ->
-                                        if (accepted) {
-                                            draftText = ""
-                                            if (!isGroup) chatViewModel.setConversationDraft(threadId, "")
-                                        }
-                                    }
-                                }
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = SaturnInk)
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -392,7 +340,6 @@ fun ConversationScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // MagicUI Meteors + Brand Board Doodles in Saturn palette
             SaturnMeteorsAndDoodlesBackground(modifier = Modifier.fillMaxSize())
 
             LazyColumn(
@@ -518,7 +465,9 @@ fun ConversationScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (!isGroup) AppStateStore.clearPrivateConversation(threadId)
+                        if (!isGroup) {
+                            scope.launch { chatViewModel.deletePrivateConversation(threadId) }
+                        }
                         showClearHistoryConfirm = false
                     }
                 ) {
@@ -558,7 +507,7 @@ fun ConversationScreen(
                         if (isGroup) {
                             chatViewModel.leaveChannel(threadId)
                         } else {
-                            AppStateStore.removePrivateConversation(threadId)
+                            scope.launch { chatViewModel.deletePrivateConversation(threadId) }
                         }
                         handleExit()
                     }
@@ -572,6 +521,142 @@ fun ConversationScreen(
                 }
             }
         )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun SaturnMessageBox(
+    text: String,
+    onTextChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onAttachClick: () -> Unit,
+    onMicClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val hasText = text.isNotBlank()
+    var showTooltip by remember { mutableStateOf(false) }
+
+    val sendBg by animateColorAsState(
+        targetValue = if (hasText) SaturnPeach else Color.Transparent,
+        animationSpec = tween(250),
+        label = "sendButtonBg"
+    )
+
+    Column(modifier = modifier) {
+        AnimatedVisibility(
+            visible = showTooltip,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut()
+        ) {
+            Surface(
+                color = SaturnInk,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+            ) {
+                Text(
+                    text = "Add an image",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+            }
+        }
+
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            shape = RoundedCornerShape(100.dp),
+            color = SaturnSurface,
+            border = BorderStroke(
+                width = 1.5.dp,
+                color = SaturnInk
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Circular '+' Attachment Button (long-press toggles "Add an image" tooltip)
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .border(1.5.dp, SaturnInk, CircleShape)
+                        .combinedClickable(
+                            onClick = onAttachClick,
+                            onLongClick = { showTooltip = !showTooltip }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add an image",
+                        tint = SaturnInk,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                BasicTextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = SaturnInk,
+                        fontSize = 15.sp
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 10.dp),
+                    decorationBox = { innerTextField ->
+                        if (text.isEmpty()) {
+                            SaturnTypingText(
+                                fullText = "Saturn it...",
+                                color = SaturnSecondaryText,
+                                fontSize = 15.sp,
+                                charDelayMs = 80L,
+                                repeatLoop = true
+                            )
+                        }
+                        innerTextField()
+                    }
+                )
+
+                if (!hasText) {
+                    IconButton(onClick = onMicClick, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Voice note",
+                            tint = SaturnInk,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(sendBg)
+                        .then(
+                            if (hasText) Modifier.border(1.5.dp, SaturnInk, CircleShape)
+                            else Modifier
+                        )
+                        .clickable(enabled = hasText) { onSend() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Send",
+                        tint = if (hasText) SaturnInk else SaturnSecondaryText,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -642,7 +727,6 @@ private fun SaturnBubble(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(6.dp)
                     ) {
-                        // Swap to Image(painterResource(R.drawable.mascot_...), ...) once PNGs are exported
                         Text("★", fontSize = 44.sp, color = SaturnInk)
                         Text(
                             text = stickerItem.label,
