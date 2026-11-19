@@ -6,9 +6,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,8 +25,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -34,8 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.cos
-import kotlin.math.sin
+import kotlin.math.*
 import kotlin.random.Random
 
 // Official Saturn Design System v2 Palette
@@ -51,6 +54,11 @@ val SaturnSage = Color(0xFFB3D9B1)
 val SaturnLavender = Color(0xFFE8D8FF)
 val SaturnSand = Color(0xFFD9C9B8)
 val SaturnError = Color(0xFFC65E65)
+
+// Dark Mode Tokens derived from Saturn Ink (#2B2B2B) & Sand (#D9C9B8)
+val SaturnDarkBg = Color(0xFF2B2B2B)
+val SaturnDarkSurface = Color(0xFF363432)
+val SaturnDarkSurfaceSecondary = Color(0xFF423F3C)
 
 // 1. MagicUI RippleButton
 @Composable
@@ -121,7 +129,7 @@ fun SaturnRippleButton(
     }
 }
 
-// 2. MagicUI TypingAnimation (for profile name, username, "Saturn it", etc.)
+// 2. MagicUI TypingAnimation
 @Composable
 fun SaturnTypingText(
     fullText: String,
@@ -154,7 +162,7 @@ fun SaturnTypingText(
     )
 }
 
-// 3. MagicUI AnimatedGridPattern (skewed pulsing grid in Saturn colors)
+// 3. MagicUI AnimatedGridPattern
 @Composable
 fun SaturnAnimatedGridBackground(modifier: Modifier = Modifier) {
     val infiniteTransition = rememberInfiniteTransition(label = "grid_pulse")
@@ -209,19 +217,53 @@ fun SaturnAnimatedGridBackground(modifier: Modifier = Modifier) {
     }
 }
 
-// 4. MagicUI Meteors + Brand Board Doodles (HomeScreen & ChatScreen background)
+// 4. Interactive Saturn Mosaic + Falling Meteors Background (Light & Dark Modes)
 @Composable
 fun SaturnMeteorsAndDoodlesBackground(
     modifier: Modifier = Modifier,
+    isDarkTheme: Boolean = isSystemInDarkTheme(),
     meteorCount: Int = 14
 ) {
-    val meteorSeeds = remember {
-        val palette = listOf(SaturnYellow, SaturnPeach, SaturnSkyBlue, SaturnLavender, SaturnSage)
+    val bgColor = if (isDarkTheme) SaturnDarkBg else SaturnPaper
+    val baseInk = if (isDarkTheme) SaturnSand.copy(alpha = 0.24f) else SaturnInk.copy(alpha = 0.20f)
+    val litPalette = remember(isDarkTheme) {
+        if (isDarkTheme) {
+            listOf(SaturnYellow, SaturnPeach, SaturnSkyBlue, SaturnLavender, SaturnSage)
+        } else {
+            listOf(SaturnPeach, SaturnYellow, SaturnSkyBlue, SaturnSage, SaturnLavender)
+        }
+    }
+
+    // Touch / drag magnet state (ported from your Swing ShapeMosaicPanel)
+    var targetX by remember { mutableFloatStateOf(-10_000f) }
+    var targetY by remember { mutableFloatStateOf(-10_000f) }
+    var easedX by remember { mutableFloatStateOf(-10_000f) }
+    var easedY by remember { mutableFloatStateOf(-10_000f) }
+    var wantHold by remember { mutableFloatStateOf(0f) }
+    var hold by remember { mutableFloatStateOf(0f) }
+    var animTime by remember { mutableFloatStateOf(0f) }
+    val tau = (PI * 2.0).toFloat()
+
+    LaunchedEffect(Unit) {
+        var lastNanos = withFrameNanos { it }
+        while (true) {
+            withFrameNanos { now ->
+                val dt = ((now - lastNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                lastNanos = now
+                animTime += dt * 0.45f * tau
+                easedX += (targetX - easedX) * (1f - exp(-dt * 9f))
+                easedY += (targetY - easedY) * (1f - exp(-dt * 9f))
+                hold += (wantHold - hold) * (1f - exp(-dt * 5f))
+            }
+        }
+    }
+
+    val meteorSeeds = remember(meteorCount, isDarkTheme) {
         List(meteorCount) { idx ->
             Triple(
-                Random(idx * 31).nextFloat(),
-                Random(idx * 73).nextFloat(),
-                palette[idx % palette.size]
+                Random(idx * 31 + 7).nextFloat(),
+                Random(idx * 73 + 13).nextFloat(),
+                litPalette[idx % litPalette.size]
             )
         }
     }
@@ -231,88 +273,208 @@ fun SaturnMeteorsAndDoodlesBackground(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 4800, easing = LinearEasing),
+            animation = tween(durationMillis = 5000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "meteor_fall"
     )
 
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
+    Box(
+        modifier = modifier
+            .background(bgColor)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.firstOrNull { it.pressed }
+                        if (pressed != null) {
+                            targetX = pressed.position.x
+                            targetY = pressed.position.y
+                            if (wantHold == 0f) {
+                                easedX = targetX
+                                easedY = targetY
+                            }
+                            wantHold = 1f
+                        } else {
+                            wantHold = 0f
+                            break
+                        }
+                    }
+                }
+            }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cellPx = 44.dp.toPx()
+            val baseRadius = cellPx * 0.27f
+            val reachPx = 150.dp.toPx()
+            val strokePx = 1.6.dp.toPx()
 
-        // Pastel falling meteors (no text)
-        meteorSeeds.forEachIndexed { idx, (startXFrac, delayFrac, color) ->
-            val localT = (progress + delayFrac) % 1f
-            val headX = (startXFrac * w * 1.3f) - (localT * w * 0.55f)
-            val headY = -40.dp.toPx() + (localT * (h + 120.dp.toPx()))
-            val tailLen = 54.dp.toPx()
+            val cols = ceil(size.width / cellPx).toInt()
+            val rows = ceil(size.height / cellPx).toInt()
 
-            drawLine(
-                brush = Brush.linearGradient(
-                    colors = listOf(color.copy(alpha = 0.75f), Color.Transparent),
+            // 1. Interactive Saturn Doodle Mosaic (6 brand-board elements)
+            for (row in 0 until rows) {
+                for (col in 0 until cols) {
+                    val cx = col.toFloat()
+                    val cy = row.toFloat()
+                    val midX = (cx + 0.5f) * cellPx
+                    val midY = (cy + 0.5f) * cellPx
+
+                    val seed = hash2(cx, cy)
+                    val kind = min(floor(hash2(cx + 7.3f, cy + 7.3f) * 6f).toInt(), 5)
+                    val litTarget = litPalette[(col + row * 3).mod(litPalette.size)]
+
+                    val dist = hypot(midX - easedX, midY - easedY)
+                    val nearRaw = 1f - smoothstep(0f, reachPx, dist)
+                    val near = nearRaw * nearRaw * hold
+
+                    val heading = if (seed < 0.5f) 1f else -1f
+                    val angleDeg = Math.toDegrees(
+                        ((animTime * (0.55f + seed * 0.6f) * heading + seed * tau) + near * 0.7f * tau).toDouble()
+                    ).toFloat()
+                    val r = baseRadius * (1f + near * 0.42f)
+
+                    val activeColor = Color(
+                        red = baseInk.red + (litTarget.red - baseInk.red) * near,
+                        green = baseInk.green + (litTarget.green - baseInk.green) * near,
+                        blue = baseInk.blue + (litTarget.blue - baseInk.blue) * near,
+                        alpha = (0.55f + 0.45f * near).coerceIn(0f, 1f)
+                    )
+                    val fillTint = litTarget.copy(alpha = (0.06f + near * 0.40f).coerceIn(0f, 0.8f))
+
+                    translate(left = midX, top = midY) {
+                        rotate(degrees = angleDeg, pivot = Offset.Zero) {
+                            drawSaturnDoodleElement(
+                                kind = kind,
+                                r = r,
+                                strokeColor = activeColor,
+                                fillColor = fillTint,
+                                strokeWidth = strokePx
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2. Diagonal Falling Pastel Meteors
+            val w = size.width
+            val h = size.height
+            meteorSeeds.forEach { (startXFrac, delayFrac, color) ->
+                val localT = (progress + delayFrac) % 1f
+                val headX = (startXFrac * w * 1.35f) - (localT * w * 0.6f)
+                val headY = -40.dp.toPx() + (localT * (h + 120.dp.toPx()))
+                val tailLen = 56.dp.toPx()
+                val tailEnd = Offset(headX + tailLen * 0.6f, headY - tailLen)
+
+                drawLine(
+                    brush = Brush.linearGradient(
+                        colors = listOf(color.copy(alpha = if (isDarkTheme) 0.85f else 0.78f), Color.Transparent),
+                        start = Offset(headX, headY),
+                        end = tailEnd
+                    ),
                     start = Offset(headX, headY),
-                    end = Offset(headX + tailLen * 0.6f, headY - tailLen)
-                ),
-                start = Offset(headX, headY),
-                end = Offset(headX + tailLen * 0.6f, headY - tailLen),
-                strokeWidth = 2.5.dp.toPx(),
-                cap = StrokeCap.Round
-            )
-            drawCircle(
-                color = color,
-                radius = 2.5.dp.toPx(),
-                center = Offset(headX, headY)
-            )
-        }
-
-        // Brand-board doodles: 4-point sparkles, hearts, flower, cloud, mini ringed Saturn
-        drawSparkleDoodle(Offset(w * 0.14f, h * 0.22f), 11.dp.toPx(), SaturnYellow)
-        drawSparkleDoodle(Offset(w * 0.86f, h * 0.34f), 9.dp.toPx(), SaturnPeach)
-        drawSparkleDoodle(Offset(w * 0.78f, h * 0.76f), 12.dp.toPx(), SaturnSkyBlue)
-
-        // Hand-drawn outline heart doodle
-        val hx = w * 0.16f
-        val hy = h * 0.68f
-        val hs = 14.dp.toPx()
-        val heartPath = Path().apply {
-            moveTo(hx, hy + hs * 0.4f)
-            cubicTo(hx - hs, hy - hs * 0.3f, hx - hs * 0.4f, hy - hs, hx, hy - hs * 0.35f)
-            cubicTo(hx + hs * 0.4f, hy - hs, hx + hs, hy - hs * 0.3f, hx, hy + hs * 0.4f)
-        }
-        drawPath(heartPath, color = SaturnInk.copy(alpha = 0.22f), style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
-
-        // Mini ringed Saturn doodle
-        val px = w * 0.84f
-        val py = h * 0.56f
-        val pr = 12.dp.toPx()
-        drawCircle(SaturnYellow.copy(alpha = 0.45f), radius = pr, center = Offset(px, py))
-        drawCircle(SaturnInk.copy(alpha = 0.22f), radius = pr, center = Offset(px, py), style = Stroke(1.8.dp.toPx()))
-        rotate(degrees = -22f, pivot = Offset(px, py)) {
-            drawOval(
-                color = SaturnInk.copy(alpha = 0.22f),
-                topLeft = Offset(px - pr * 1.8f, py - pr * 0.35f),
-                size = Size(pr * 3.6f, pr * 0.7f),
-                style = Stroke(1.8.dp.toPx())
-            )
+                    end = tailEnd,
+                    strokeWidth = 2.6.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+                drawCircle(
+                    color = color,
+                    radius = 2.6.dp.toPx(),
+                    center = Offset(headX, headY)
+                )
+            }
         }
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSparkleDoodle(
-    center: Offset,
-    radius: Float,
-    color: Color
+private fun DrawScope.drawSaturnDoodleElement(
+    kind: Int,
+    r: Float,
+    strokeColor: Color,
+    fillColor: Color,
+    strokeWidth: Float
 ) {
-    val path = Path().apply {
-        moveTo(center.x, center.y - radius)
-        quadraticTo(center.x, center.y, center.x + radius, center.y)
-        quadraticTo(center.x, center.y, center.x, center.y + radius)
-        quadraticTo(center.x, center.y, center.x - radius, center.y)
-        quadraticTo(center.x, center.y, center.x, center.y - radius)
+    val strokeStyle = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    when (kind) {
+        0 -> { // Ringed Saturn Planet
+            drawCircle(fillColor, radius = r * 0.66f, center = Offset.Zero)
+            drawCircle(strokeColor, radius = r * 0.66f, center = Offset.Zero, style = strokeStyle)
+            rotate(-24f, Offset.Zero) {
+                drawOval(
+                    color = strokeColor,
+                    topLeft = Offset(-r * 1.32f, -r * 0.28f),
+                    size = Size(r * 2.64f, r * 0.56f),
+                    style = strokeStyle
+                )
+            }
+        }
+        1 -> { // 4-Point Sparkle
+            val p = Path().apply {
+                moveTo(0f, -r)
+                quadraticTo(0f, 0f, r, 0f)
+                quadraticTo(0f, 0f, 0f, r)
+                quadraticTo(0f, 0f, -r, 0f)
+                quadraticTo(0f, 0f, 0f, -r)
+                close()
+            }
+            drawPath(p, fillColor)
+            drawPath(p, strokeColor, style = strokeStyle)
+        }
+        2 -> { // Puffy 5-Point Star
+            val p = Path()
+            for (i in 0 until 10) {
+                val rad = if (i % 2 == 0) r * 1.05f else r * 0.52f
+                val a = -PI / 2.0 + i * (PI / 5.0)
+                val px = (cos(a) * rad).toFloat()
+                val py = (sin(a) * rad).toFloat()
+                if (i == 0) p.moveTo(px, py) else p.lineTo(px, py)
+            }
+            p.close()
+            drawPath(p, fillColor)
+            drawPath(p, strokeColor, style = strokeStyle)
+        }
+        3 -> { // Heart Doodle
+            val s = r * 0.95f
+            val p = Path().apply {
+                moveTo(0f, s * 0.72f)
+                cubicTo(-s * 1.25f, -s * 0.05f, -s * 0.65f, -s * 0.95f, 0f, -s * 0.32f)
+                cubicTo(s * 0.65f, -s * 0.95f, s * 1.25f, -s * 0.05f, 0f, s * 0.72f)
+                close()
+            }
+            drawPath(p, fillColor)
+            drawPath(p, strokeColor, style = strokeStyle)
+        }
+        4 -> { // 5-Petal Flower Doodle
+            for (i in 0 until 5) {
+                val a = i * (2.0 * PI / 5.0)
+                val c = Offset((cos(a) * r * 0.52f).toFloat(), (sin(a) * r * 0.52f).toFloat())
+                drawCircle(fillColor, radius = r * 0.40f, center = c)
+                drawCircle(strokeColor, radius = r * 0.40f, center = c, style = strokeStyle)
+            }
+            drawCircle(strokeColor, radius = r * 0.25f, center = Offset.Zero, style = strokeStyle)
+        }
+        else -> { // Fluffy Cloud Doodle
+            val p = Path().apply {
+                moveTo(-r * 0.75f, r * 0.35f)
+                cubicTo(-r * 1.15f, r * 0.35f, -r * 1.1f, -r * 0.25f, -r * 0.55f, -r * 0.25f)
+                cubicTo(-r * 0.45f, -r * 0.75f, r * 0.25f, -r * 0.75f, r * 0.42f, -r * 0.25f)
+                cubicTo(r * 0.98f, -r * 0.25f, r * 1.05f, r * 0.35f, r * 0.68f, r * 0.35f)
+                close()
+            }
+            drawPath(p, fillColor)
+            drawPath(p, strokeColor, style = strokeStyle)
+        }
     }
-    drawPath(path, color = color.copy(alpha = 0.65f))
-    drawPath(path, color = SaturnInk.copy(alpha = 0.25f), style = Stroke(1.3.dp.toPx()))
+}
+
+private fun hash2(x: Float, y: Float): Float {
+    val s = sin(x * 127.1f + y * 311.7f) * 43758.5453123f
+    return s - floor(s)
+}
+
+private fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
+    val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
 }
 
 // 5. MagicUI Globe -> Planet Saturn Launch Splash Screen
@@ -342,7 +504,11 @@ fun SaturnPlanetSplashScreen(
             .background(SaturnPaper),
         contentAlignment = Alignment.Center
     ) {
-        SaturnMeteorsAndDoodlesBackground(modifier = Modifier.fillMaxSize(), meteorCount = 10)
+        SaturnMeteorsAndDoodlesBackground(
+            modifier = Modifier.fillMaxSize(),
+            isDarkTheme = false,
+            meteorCount = 10
+        )
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Canvas(modifier = Modifier.size(180.dp)) {
@@ -350,7 +516,6 @@ fun SaturnPlanetSplashScreen(
                 val cy = size.height / 2f
                 val r = 46.dp.toPx()
 
-                // Tilted ring behind
                 rotate(degrees = -22f, pivot = Offset(cx, cy)) {
                     drawOval(
                         color = SaturnPeach,
@@ -366,7 +531,6 @@ fun SaturnPlanetSplashScreen(
                     )
                 }
 
-                // Planet Saturn body + cute eyes from brand board
                 drawCircle(color = SaturnYellow, radius = r, center = Offset(cx, cy))
                 drawCircle(color = SaturnInk, radius = r, center = Offset(cx, cy), style = Stroke(3.dp.toPx()))
                 drawOval(
@@ -380,7 +544,6 @@ fun SaturnPlanetSplashScreen(
                     size = Size(5.dp.toPx(), 10.dp.toPx())
                 )
 
-                // Front arc of tilted ring
                 rotate(degrees = -22f, pivot = Offset(cx, cy)) {
                     drawArc(
                         color = SaturnPeach,
@@ -393,7 +556,6 @@ fun SaturnPlanetSplashScreen(
                     )
                 }
 
-                // Orbiting little Moon
                 val rad = Math.toRadians(orbitAngle.toDouble())
                 val mx = cx + (cos(rad) * r * 1.65f).toFloat()
                 val my = cy + (sin(rad) * r * 0.65f).toFloat()
@@ -420,7 +582,7 @@ fun SaturnPlanetSplashScreen(
     }
 }
 
-// 6. MagicUI AvatarCircles (Overlapping Moon Contact Circles)
+// 6. MagicUI AvatarCircles
 @Composable
 fun SaturnAvatarCircles(
     moonNames: List<String>,
@@ -471,7 +633,7 @@ fun SaturnAvatarCircles(
     }
 }
 
-// 7. MagicUI Dock (For Users to Communicate With You on About Saturn)
+// 7. MagicUI Dock
 data class SaturnDockLink(
     val label: String,
     val url: String,
@@ -530,7 +692,7 @@ fun SaturnCreatorDock(
     }
 }
 
-// 8. MagicUI Confetti (Fires at end of Onboarding for New Users)
+// 8. MagicUI Confetti
 @Composable
 fun SaturnConfettiOverlay(
     trigger: Boolean,

@@ -254,7 +254,7 @@ class MainActivity : OrientationAwareActivity() {
                 } else {
                     HomeScreen(
                         chatViewModel = chatViewModel,
-                        founderName = "Saatvik Vuppala",
+                        founderNames = "Saatvik Raj & Khayum Shaik",
                         onOpenChat = { id, title, isGroup ->
                             activeThread = Triple(id, title, isGroup)
                         }

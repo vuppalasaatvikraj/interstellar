@@ -1,5 +1,6 @@
 package com.bitchat.android.ui.messenger
 
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -33,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,15 +76,36 @@ fun ConversationScreen(
     onPickImage: () -> Unit = {},
     onToggleVoiceNote: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val moonNamePrefs = remember(context) {
+        context.getSharedPreferences("saturn_moon_names", Context.MODE_PRIVATE)
+    }
+    val themePrefs = remember(context) {
+        context.getSharedPreferences("saturn_theme_prefs", Context.MODE_PRIVATE)
+    }
+    val isDarkTheme = remember {
+        themePrefs.getBoolean("is_dark_theme", false)
+    }
+
+    val bgPaper = if (isDarkTheme) SaturnDarkBg else SaturnPaper
+    val cardSurface = if (isDarkTheme) SaturnDarkSurface else SaturnSurface
+    val primaryInk = if (isDarkTheme) SaturnPaper else SaturnInk
+    val secondaryInk = if (isDarkTheme) SaturnSand else SaturnSecondaryText
+    val strokeBorder = if (isDarkTheme) SaturnSand else SaturnInk
+
     val privateChats by chatViewModel.privateChats.collectAsState()
     val channelMessages by chatViewModel.channelMessages.collectAsState()
     val connectedPeers by chatViewModel.connectedPeers.collectAsState()
     val displayNames by AppStateStore.privateConversationDisplayNames.collectAsState()
     val myPeerId = chatViewModel.myPeerID
 
+    var customMoonName by remember(threadId) {
+        mutableStateOf(moonNamePrefs.getString(threadId, null)?.takeIf { it.isNotBlank() })
+    }
+
     val currentTitle = if (!isGroup) {
-        displayNames[threadId] ?: threadTitle
+        customMoonName ?: displayNames[threadId] ?: threadTitle
     } else {
         threadTitle
     }
@@ -137,13 +161,13 @@ fun ConversationScreen(
     BackHandler { handleExit() }
 
     Scaffold(
-        containerColor = SaturnPaper,
+        containerColor = bgPaper,
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = SaturnPaper),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = bgPaper),
                 navigationIcon = {
                     IconButton(onClick = handleExit) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = SaturnInk)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = primaryInk)
                     }
                 },
                 title = {
@@ -168,7 +192,7 @@ fun ConversationScreen(
                                 text = currentTitle,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 17.sp,
-                                color = SaturnInk
+                                color = primaryInk
                             )
                             Text(
                                 text = when {
@@ -177,7 +201,7 @@ fun ConversationScreen(
                                     else -> "Moon"
                                 },
                                 fontSize = 12.sp,
-                                color = SaturnSecondaryText
+                                color = secondaryInk
                             )
                         }
                     }
@@ -185,17 +209,17 @@ fun ConversationScreen(
                 actions = {
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Chat options", tint = SaturnInk)
+                            Icon(Icons.Default.MoreVert, contentDescription = "Chat options", tint = primaryInk)
                         }
                         DropdownMenu(
                             expanded = menuExpanded,
                             onDismissRequest = { menuExpanded = false },
-                            containerColor = SaturnSurface
+                            containerColor = cardSurface
                         ) {
                             if (!isGroup) {
                                 DropdownMenuItem(
-                                    text = { Text("Rename Moon", color = SaturnInk) },
-                                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = SaturnInk) },
+                                    text = { Text("Rename Moon", color = primaryInk) },
+                                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = primaryInk) },
                                     onClick = {
                                         menuExpanded = false
                                         showRenameDialog = true
@@ -203,8 +227,8 @@ fun ConversationScreen(
                                 )
                             }
                             DropdownMenuItem(
-                                text = { Text("Delete chat history", color = SaturnInk) },
-                                leadingIcon = { Icon(Icons.Default.CleaningServices, contentDescription = null, tint = SaturnInk) },
+                                text = { Text("Delete chat history", color = primaryInk) },
+                                leadingIcon = { Icon(Icons.Default.CleaningServices, contentDescription = null, tint = primaryInk) },
                                 onClick = {
                                     menuExpanded = false
                                     showClearHistoryConfirm = true
@@ -235,12 +259,11 @@ fun ConversationScreen(
                     .fillMaxWidth()
                     .navigationBarsPadding()
             ) {
-                // Expandable 8-Pose Saturn Mascot Sticker Tray
                 if (showStickerTray) {
                     Surface(
-                        color = SaturnSurface,
+                        color = cardSurface,
                         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                        border = BorderStroke(1.5.dp, SaturnInk),
+                        border = BorderStroke(1.5.dp, strokeBorder),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(210.dp)
@@ -250,7 +273,7 @@ fun ConversationScreen(
                                 text = "Saturn Stickers",
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 14.sp,
-                                color = SaturnInk
+                                color = primaryInk
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             LazyVerticalGrid(
@@ -286,7 +309,6 @@ fun ConversationScreen(
                     }
                 }
 
-                // Bottom Composer: [Sticker Button] + [Uiverse SaturnMessageBox]
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -297,15 +319,15 @@ fun ConversationScreen(
                         modifier = Modifier
                             .size(50.dp)
                             .clip(CircleShape)
-                            .background(if (showStickerTray) SaturnYellow else SaturnSurface)
-                            .border(1.5.dp, SaturnInk, CircleShape)
+                            .background(if (showStickerTray) SaturnYellow else cardSurface)
+                            .border(1.5.dp, strokeBorder, CircleShape)
                             .clickable { showStickerTray = !showStickerTray },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.EmojiEmotions,
                             contentDescription = "Saturn Stickers",
-                            tint = SaturnInk,
+                            tint = if (showStickerTray) SaturnInk else primaryInk,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -329,6 +351,7 @@ fun ConversationScreen(
                         },
                         onAttachClick = onPickImage,
                         onMicClick = onToggleVoiceNote,
+                        isDarkTheme = isDarkTheme,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -340,7 +363,10 @@ fun ConversationScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            SaturnMeteorsAndDoodlesBackground(modifier = Modifier.fillMaxSize())
+            SaturnMeteorsAndDoodlesBackground(
+                modifier = Modifier.fillMaxSize(),
+                isDarkTheme = isDarkTheme
+            )
 
             LazyColumn(
                 state = listState,
@@ -359,6 +385,7 @@ fun ConversationScreen(
                         isMine = isMine,
                         isRevoked = isRevoked,
                         showSender = isGroup && !isMine,
+                        isDarkTheme = isDarkTheme,
                         onLongClick = { selectedMessageForAction = message }
                     )
                 }
@@ -366,14 +393,13 @@ fun ConversationScreen(
         }
     }
 
-    // Long-Press Message Dialog: Delete for me / Delete for everyone / Cancel
     selectedMessageForAction?.let { targetMsg ->
         val isMine = targetMsg.senderPeerID == myPeerId
         AlertDialog(
             onDismissRequest = { selectedMessageForAction = null },
-            containerColor = SaturnSurface,
+            containerColor = cardSurface,
             title = {
-                Text("Message Options", fontWeight = FontWeight.ExtraBold, color = SaturnInk)
+                Text("Message Options", fontWeight = FontWeight.ExtraBold, color = primaryInk)
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -386,7 +412,7 @@ fun ConversationScreen(
                     ) {
                         Text(
                             text = "Delete for me",
-                            color = SaturnInk,
+                            color = primaryInk,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -412,19 +438,18 @@ fun ConversationScreen(
             },
             confirmButton = {
                 TextButton(onClick = { selectedMessageForAction = null }) {
-                    Text("Cancel", color = SaturnSecondaryText, fontWeight = FontWeight.SemiBold)
+                    Text("Cancel", color = secondaryInk, fontWeight = FontWeight.SemiBold)
                 }
             }
         )
     }
 
-    // Rename Moon Companion Dialog
     if (showRenameDialog) {
         var newMoonName by remember(currentTitle) { mutableStateOf(currentTitle) }
         AlertDialog(
             onDismissRequest = { showRenameDialog = false },
-            containerColor = SaturnSurface,
-            title = { Text("Rename Moon", fontWeight = FontWeight.Bold, color = SaturnInk) },
+            containerColor = cardSurface,
+            title = { Text("Rename Moon", fontWeight = FontWeight.Bold, color = primaryInk) },
             text = {
                 OutlinedTextField(
                     value = newMoonName,
@@ -439,29 +464,29 @@ fun ConversationScreen(
                     onClick = {
                         val clean = newMoonName.trim()
                         if (clean.isNotEmpty()) {
-                            AppStateStore.setPrivateConversationDisplayName(threadId, clean)
+                            moonNamePrefs.edit().putString(threadId, clean).apply()
+                            customMoonName = clean
                         }
                         showRenameDialog = false
                     }
                 ) {
-                    Text("Save", fontWeight = FontWeight.Bold, color = SaturnInk)
+                    Text("Save", fontWeight = FontWeight.Bold, color = primaryInk)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRenameDialog = false }) {
-                    Text("Cancel", color = SaturnSecondaryText)
+                    Text("Cancel", color = secondaryInk)
                 }
             }
         )
     }
 
-    // Clear Chat History Confirmation
     if (showClearHistoryConfirm) {
         AlertDialog(
             onDismissRequest = { showClearHistoryConfirm = false },
-            containerColor = SaturnSurface,
-            title = { Text("Delete chat history?", fontWeight = FontWeight.Bold, color = SaturnInk) },
-            text = { Text("This clears all messages in this chat on your device.", color = SaturnSecondaryText) },
+            containerColor = cardSurface,
+            title = { Text("Delete chat history?", fontWeight = FontWeight.Bold, color = primaryInk) },
+            text = { Text("This clears all messages in this chat on your device.", color = secondaryInk) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -476,34 +501,34 @@ fun ConversationScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showClearHistoryConfirm = false }) {
-                    Text("Cancel", color = SaturnInk)
+                    Text("Cancel", color = primaryInk)
                 }
             }
         )
     }
 
-    // Delete Moon / Group Confirmation
     if (showDeleteMoonConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteMoonConfirm = false },
-            containerColor = SaturnSurface,
+            containerColor = cardSurface,
             title = {
                 Text(
                     text = if (isGroup) "Delete group?" else "Delete Moon?",
                     fontWeight = FontWeight.Bold,
-                    color = SaturnInk
+                    color = primaryInk
                 )
             },
             text = {
                 Text(
                     text = "This removes $currentTitle and their chat from your home screen.",
-                    color = SaturnSecondaryText
+                    color = secondaryInk
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showDeleteMoonConfirm = false
+                        moonNamePrefs.edit().remove(threadId).apply()
                         if (isGroup) {
                             chatViewModel.leaveChannel(threadId)
                         } else {
@@ -517,7 +542,7 @@ fun ConversationScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteMoonConfirm = false }) {
-                    Text("Cancel", color = SaturnInk)
+                    Text("Cancel", color = primaryInk)
                 }
             }
         )
@@ -532,10 +557,16 @@ fun SaturnMessageBox(
     onSend: () -> Unit,
     onAttachClick: () -> Unit,
     onMicClick: () -> Unit,
+    isDarkTheme: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val hasText = text.isNotBlank()
     var showTooltip by remember { mutableStateOf(false) }
+
+    val boxSurface = if (isDarkTheme) SaturnDarkSurface else SaturnSurface
+    val boxBorder = if (isDarkTheme) SaturnSand else SaturnInk
+    val boxText = if (isDarkTheme) SaturnPaper else SaturnInk
+    val boxHint = if (isDarkTheme) SaturnSand else SaturnSecondaryText
 
     val sendBg by animateColorAsState(
         targetValue = if (hasText) SaturnPeach else Color.Transparent,
@@ -568,10 +599,10 @@ fun SaturnMessageBox(
                 .fillMaxWidth()
                 .height(50.dp),
             shape = RoundedCornerShape(100.dp),
-            color = SaturnSurface,
+            color = boxSurface,
             border = BorderStroke(
                 width = 1.5.dp,
-                color = SaturnInk
+                color = boxBorder
             )
         ) {
             Row(
@@ -580,12 +611,11 @@ fun SaturnMessageBox(
                     .padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Circular '+' Attachment Button (long-press toggles "Add an image" tooltip)
                 Box(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(CircleShape)
-                        .border(1.5.dp, SaturnInk, CircleShape)
+                        .border(1.5.dp, boxBorder, CircleShape)
                         .combinedClickable(
                             onClick = onAttachClick,
                             onLongClick = { showTooltip = !showTooltip }
@@ -595,7 +625,7 @@ fun SaturnMessageBox(
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Add an image",
-                        tint = SaturnInk,
+                        tint = boxText,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -604,8 +634,9 @@ fun SaturnMessageBox(
                     value = text,
                     onValueChange = onTextChange,
                     singleLine = true,
+                    cursorBrush = SolidColor(boxText),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = SaturnInk,
+                        color = boxText,
                         fontSize = 15.sp
                     ),
                     modifier = Modifier
@@ -615,7 +646,7 @@ fun SaturnMessageBox(
                         if (text.isEmpty()) {
                             SaturnTypingText(
                                 fullText = "Saturn it...",
-                                color = SaturnSecondaryText,
+                                color = boxHint,
                                 fontSize = 15.sp,
                                 charDelayMs = 80L,
                                 repeatLoop = true
@@ -630,7 +661,7 @@ fun SaturnMessageBox(
                         Icon(
                             imageVector = Icons.Default.Mic,
                             contentDescription = "Voice note",
-                            tint = SaturnInk,
+                            tint = boxText,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -651,7 +682,7 @@ fun SaturnMessageBox(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Send,
                         contentDescription = "Send",
-                        tint = if (hasText) SaturnInk else SaturnSecondaryText,
+                        tint = if (hasText) SaturnInk else boxHint,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -667,6 +698,7 @@ private fun SaturnBubble(
     isMine: Boolean,
     isRevoked: Boolean,
     showSender: Boolean,
+    isDarkTheme: Boolean,
     onLongClick: () -> Unit
 ) {
     val stickerItem = remember(message.content) {
@@ -679,10 +711,21 @@ private fun SaturnBubble(
         RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 6.dp, bottomEnd = 20.dp)
     }
     val bubbleColor = when {
-        isRevoked -> SaturnSurfaceSecondary
+        isRevoked -> if (isDarkTheme) SaturnDarkSurfaceSecondary else SaturnSurfaceSecondary
         stickerItem != null -> stickerItem.bgColor
         isMine -> SaturnPeach
-        else -> SaturnSurface
+        else -> if (isDarkTheme) SaturnDarkSurface else SaturnSurface
+    }
+    val bubbleBorder = if (isDarkTheme) SaturnSand else SaturnInk
+    val bubbleTextColor = when {
+        isMine || stickerItem != null -> SaturnInk
+        isDarkTheme -> SaturnPaper
+        else -> SaturnInk
+    }
+    val bubbleSubColor = when {
+        isMine || stickerItem != null -> SaturnSecondaryText
+        isDarkTheme -> SaturnSand
+        else -> SaturnSecondaryText
     }
     val timeText = remember(message.timestamp) {
         SimpleDateFormat("hh:mm a", Locale.getDefault()).format(message.timestamp)
@@ -697,7 +740,7 @@ private fun SaturnBubble(
                 .widthIn(max = 285.dp)
                 .clip(bubbleShape)
                 .background(bubbleColor)
-                .border(1.5.dp, SaturnInk, bubbleShape)
+                .border(1.5.dp, bubbleBorder, bubbleShape)
                 .combinedClickable(
                     onClick = {},
                     onLongClick = onLongClick
@@ -709,7 +752,7 @@ private fun SaturnBubble(
                     text = message.sender,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = SaturnSecondaryText
+                    color = bubbleSubColor
                 )
                 Spacer(modifier = Modifier.height(2.dp))
             }
@@ -718,7 +761,7 @@ private fun SaturnBubble(
                 isRevoked -> {
                     Text(
                         text = "This message was deleted",
-                        color = SaturnSecondaryText,
+                        color = bubbleSubColor,
                         fontSize = 14.sp
                     )
                 }
@@ -739,7 +782,7 @@ private fun SaturnBubble(
                 else -> {
                     Text(
                         text = message.content,
-                        color = SaturnInk,
+                        color = bubbleTextColor,
                         fontSize = 15.sp
                     )
                 }
@@ -750,7 +793,7 @@ private fun SaturnBubble(
                 modifier = Modifier.align(Alignment.End),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = timeText, fontSize = 10.sp, color = SaturnSecondaryText)
+                Text(text = timeText, fontSize = 10.sp, color = bubbleSubColor)
                 if (isMine && !isRevoked) {
                     Spacer(modifier = Modifier.width(4.dp))
                     val tickIcon = when (message.deliveryStatus) {

@@ -81,17 +81,42 @@ private enum class ActiveHomeSheet {
 @Composable
 fun HomeScreen(
     chatViewModel: ChatViewModel,
-    founderName: String = "Saatvik Vuppala",
+    founderNames: String = "Saatvik Raj & Khayum Shaik",
     creatorDockLinks: List<SaturnDockLink> = listOf(
-        SaturnDockLink("Email", "mailto:hello@saturn.app", Icons.Default.Email, SaturnPeach),
-        SaturnDockLink("GitHub", "https://github.com", Icons.Default.Code, SaturnYellow),
-        SaturnDockLink("Social", "https://x.com", Icons.Default.AlternateEmail, SaturnSkyBlue),
-        SaturnDockLink("Videos", "https://youtube.com", Icons.Default.PlayCircleOutline, SaturnSage)
+        SaturnDockLink(
+            label = "Email Saatvik",
+            url = "mailto:vuppalasaatvikraj@gmail.com",
+            icon = Icons.Default.Email,
+            pillColor = SaturnPeach
+        ),
+        SaturnDockLink(
+            label = "Saatvik LinkedIn",
+            url = "https://www.linkedin.com/in/saatvik-vuppala-269462430/",
+            icon = Icons.Default.Work,
+            pillColor = SaturnSkyBlue
+        )
     ),
     onOpenChat: (id: String, title: String, isGroup: Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val moonNamePrefs = remember(context) {
+        context.getSharedPreferences("saturn_moon_names", Context.MODE_PRIVATE)
+    }
+    val themePrefs = remember(context) {
+        context.getSharedPreferences("saturn_theme_prefs", Context.MODE_PRIVATE)
+    }
+    var isDarkTheme by remember {
+        mutableStateOf(themePrefs.getBoolean("is_dark_theme", false))
+    }
+
+    val bgPaper = if (isDarkTheme) SaturnDarkBg else SaturnPaper
+    val cardSurface = if (isDarkTheme) SaturnDarkSurface else SaturnSurface
+    val cardSurfaceSecondary = if (isDarkTheme) SaturnDarkSurfaceSecondary else SaturnSurfaceSecondary
+    val primaryInk = if (isDarkTheme) SaturnPaper else SaturnInk
+    val secondaryInk = if (isDarkTheme) SaturnSand else SaturnSecondaryText
+    val strokeBorder = if (isDarkTheme) SaturnSand else SaturnInk
+
     val conversations by chatViewModel.conversations.collectAsState()
     val privateChats by chatViewModel.privateChats.collectAsState()
     val joinedChannels by chatViewModel.joinedChannels.collectAsState()
@@ -134,7 +159,8 @@ fun HomeScreen(
     ) {
         val moons = conversations.map { summary ->
             val id = summary.conversationID
-            val name = displayNames[id] ?: summary.displayName.ifBlank { id.take(8) }
+            val customName = moonNamePrefs.getString(id, null)?.takeIf { it.isNotBlank() }
+            val name = customName ?: displayNames[id] ?: summary.displayName.ifBlank { id.take(8) }
             val draftPreview = summary.draft?.takeIf { it.isNotBlank() }?.let { "Draft: $it" }
             val lastMsg = privateChats[id]?.lastOrNull()
             val lastContent = lastMsg?.content?.takeIf { it.isNotBlank() }
@@ -178,14 +204,14 @@ fun HomeScreen(
     }
 
     Scaffold(
-        containerColor = SaturnPaper,
+        containerColor = bgPaper,
         floatingActionButton = {
             Box(
                 modifier = Modifier
                     .size(60.dp)
                     .clip(RoundedCornerShape(18.dp))
                     .background(SaturnPeach)
-                    .border(2.dp, SaturnInk, RoundedCornerShape(18.dp))
+                    .border(2.dp, strokeBorder, RoundedCornerShape(18.dp))
                     .clickable { activeSheet = ActiveHomeSheet.PLUS_ACTIONS },
                 contentAlignment = Alignment.Center
             ) {
@@ -203,7 +229,10 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            SaturnMeteorsAndDoodlesBackground(modifier = Modifier.fillMaxSize())
+            SaturnMeteorsAndDoodlesBackground(
+                modifier = Modifier.fillMaxSize(),
+                isDarkTheme = isDarkTheme
+            )
 
             Column(
                 modifier = Modifier
@@ -222,32 +251,44 @@ fun HomeScreen(
                         text = "Saturn",
                         fontSize = 26.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = SaturnInk,
+                        color = primaryInk,
                         modifier = Modifier.weight(1f)
                     )
+                    IconButton(
+                        onClick = {
+                            isDarkTheme = !isDarkTheme
+                            themePrefs.edit().putBoolean("is_dark_theme", isDarkTheme).apply()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            contentDescription = "Toggle Light or Dark Mode",
+                            tint = primaryInk
+                        )
+                    }
                     IconButton(onClick = { activeSheet = ActiveHomeSheet.ABOUT_SATURN }) {
                         Icon(
                             imageVector = Icons.Outlined.Info,
                             contentDescription = "About Saturn",
-                            tint = SaturnInk
+                            tint = primaryInk
                         )
                     }
                     IconButton(onClick = { activeSheet = ActiveHomeSheet.PROFILE_SETTINGS }) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
                             contentDescription = "Settings",
-                            tint = SaturnInk
+                            tint = primaryInk
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Uiverse-inspired Animated Search Bar (Search -> Rotating Back Arrow + Clear)
                 SaturnSearchBar(
                     query = searchQuery,
                     onQueryChange = { searchQuery = it },
-                    placeholder = "Search Moons & groups..."
+                    placeholder = "Search Moons & groups...",
+                    isDarkTheme = isDarkTheme
                 )
 
                 val moonNames = remember(allThreads) {
@@ -264,7 +305,7 @@ fun HomeScreen(
                             text = "Your Moons",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = SaturnSecondaryText
+                            color = secondaryInk
                         )
                         SaturnAvatarCircles(
                             moonNames = moonNames,
@@ -290,13 +331,13 @@ fun HomeScreen(
                                 text = "It's a little quiet in orbit.",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp,
-                                color = SaturnInk
+                                color = primaryInk
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "Tap + to add nearby Moons or start a group.",
                                 fontSize = 14.sp,
-                                color = SaturnSecondaryText
+                                color = secondaryInk
                             )
                         }
                     }
@@ -309,6 +350,7 @@ fun HomeScreen(
                         items(allThreads, key = { "${it.isGroup}_${it.id}" }) { item ->
                             MoonOrGroupRow(
                                 item = item,
+                                isDarkTheme = isDarkTheme,
                                 onClick = { onOpenChat(item.id, item.title, item.isGroup) },
                                 onLongClick = { longPressedThread = item }
                             )
@@ -322,7 +364,7 @@ fun HomeScreen(
     longPressedThread?.let { target ->
         ModalBottomSheet(
             onDismissRequest = { longPressedThread = null },
-            containerColor = SaturnSurface
+            containerColor = cardSurface
         ) {
             Column(
                 modifier = Modifier
@@ -334,18 +376,19 @@ fun HomeScreen(
                     text = target.title,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 18.sp,
-                    color = SaturnInk
+                    color = primaryInk
                 )
                 Text(
                     text = if (target.isGroup) "Group" else "Moon",
                     fontSize = 13.sp,
-                    color = SaturnSecondaryText
+                    color = secondaryInk
                 )
                 HorizontalDivider(color = SaturnSand, modifier = Modifier.padding(vertical = 6.dp))
 
                 SheetActionRow(
                     icon = Icons.Default.PushPin,
                     label = if (target.isPinned) "Unpin" else "Pin to top",
+                    tint = primaryInk,
                     onClick = {
                         chatViewModel.toggleConversationPinned(target.id)
                         longPressedThread = null
@@ -354,6 +397,7 @@ fun HomeScreen(
                 SheetActionRow(
                     icon = Icons.Outlined.Info,
                     label = if (target.isGroup) "Group info" else "Moon info",
+                    tint = primaryInk,
                     onClick = {
                         infoDialogThread = target
                         longPressedThread = null
@@ -382,32 +426,32 @@ fun HomeScreen(
     infoDialogThread?.let { info ->
         AlertDialog(
             onDismissRequest = { infoDialogThread = null },
-            containerColor = SaturnSurface,
+            containerColor = cardSurface,
             title = {
                 Text(
                     text = if (info.isGroup) "Group Info" else "Moon Info",
                     fontWeight = FontWeight.Bold,
-                    color = SaturnInk
+                    color = primaryInk
                 )
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Name: ${info.title}", fontWeight = FontWeight.SemiBold, color = SaturnInk)
+                    Text("Name: ${info.title}", fontWeight = FontWeight.SemiBold, color = primaryInk)
                     Text(
                         text = if (info.isGroup) "Group ID: ${info.id}" else "Moon ID: ${info.id.take(12)}",
                         fontSize = 13.sp,
-                        color = SaturnSecondaryText
+                        color = secondaryInk
                     )
                     Text(
                         text = if (info.isOnline) "Status: Nearby right now" else "Status: Out of direct range",
                         fontSize = 13.sp,
-                        color = SaturnSecondaryText
+                        color = secondaryInk
                     )
                 }
             },
             confirmButton = {
                 TextButton(onClick = { infoDialogThread = null }) {
-                    Text("Done", fontWeight = FontWeight.Bold, color = SaturnInk)
+                    Text("Done", fontWeight = FontWeight.Bold, color = primaryInk)
                 }
             }
         )
@@ -419,7 +463,7 @@ fun HomeScreen(
         ActiveHomeSheet.PLUS_ACTIONS -> {
             ModalBottomSheet(
                 onDismissRequest = { activeSheet = ActiveHomeSheet.NONE },
-                containerColor = SaturnSurface
+                containerColor = cardSurface
             ) {
                 Column(
                     modifier = Modifier
@@ -427,16 +471,18 @@ fun HomeScreen(
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Start something new", fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, color = SaturnInk)
+                    Text("Start something new", fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, color = primaryInk)
 
                     SheetActionRow(
                         icon = Icons.Default.BluetoothSearching,
                         label = "Add Moon (Nearby Bluetooth)",
+                        tint = primaryInk,
                         onClick = { activeSheet = ActiveHomeSheet.ADD_MOON_BLUETOOTH }
                     )
                     SheetActionRow(
                         icon = Icons.Default.GroupAdd,
                         label = "Create Group",
+                        tint = primaryInk,
                         onClick = { activeSheet = ActiveHomeSheet.CREATE_GROUP }
                     )
                     Spacer(modifier = Modifier.height(16.dp))
@@ -451,7 +497,7 @@ fun HomeScreen(
 
             ModalBottomSheet(
                 onDismissRequest = { activeSheet = ActiveHomeSheet.NONE },
-                containerColor = SaturnSurface
+                containerColor = cardSurface
             ) {
                 Column(
                     modifier = Modifier
@@ -459,11 +505,11 @@ fun HomeScreen(
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Nearby Moons via Bluetooth", fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, color = SaturnInk)
+                    Text("Nearby Moons via Bluetooth", fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, color = primaryInk)
                     Text(
                         text = "Keep Bluetooth on to spot people close by.",
                         fontSize = 14.sp,
-                        color = SaturnSecondaryText
+                        color = secondaryInk
                     )
 
                     if (nearbyIds.isEmpty()) {
@@ -473,7 +519,7 @@ fun HomeScreen(
                                 .padding(vertical = 24.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Looking for nearby Moons...", color = SaturnSecondaryText)
+                            Text("Looking for nearby Moons...", color = secondaryInk)
                         }
                     } else {
                         nearbyIds.forEach { peerId ->
@@ -482,8 +528,8 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(18.dp))
-                                    .background(SaturnSurfaceSecondary)
-                                    .border(1.5.dp, SaturnInk, RoundedCornerShape(18.dp))
+                                    .background(cardSurfaceSecondary)
+                                    .border(1.5.dp, strokeBorder, RoundedCornerShape(18.dp))
                                     .clickable {
                                         activeSheet = ActiveHomeSheet.NONE
                                         onOpenChat(peerId, peerName, false)
@@ -503,10 +549,10 @@ fun HomeScreen(
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(peerName, fontWeight = FontWeight.Bold, color = SaturnInk)
-                                    Text("Tap to add Moon", fontSize = 12.sp, color = SaturnSecondaryText)
+                                    Text(peerName, fontWeight = FontWeight.Bold, color = primaryInk)
+                                    Text("Tap to add Moon", fontSize = 12.sp, color = secondaryInk)
                                 }
-                                Icon(Icons.Default.AddCircleOutline, contentDescription = null, tint = SaturnInk)
+                                Icon(Icons.Default.AddCircleOutline, contentDescription = null, tint = primaryInk)
                             }
                         }
                     }
@@ -520,7 +566,8 @@ fun HomeScreen(
             val availableMoons = remember(conversations, displayNames) {
                 conversations.map { summary ->
                     val id = summary.conversationID
-                    val name = displayNames[id] ?: summary.displayName.ifBlank { id.take(8) }
+                    val customName = moonNamePrefs.getString(id, null)?.takeIf { it.isNotBlank() }
+                    val name = customName ?: displayNames[id] ?: summary.displayName.ifBlank { id.take(8) }
                     id to name
                 }
             }
@@ -528,7 +575,7 @@ fun HomeScreen(
 
             ModalBottomSheet(
                 onDismissRequest = { activeSheet = ActiveHomeSheet.NONE },
-                containerColor = SaturnSurface
+                containerColor = cardSurface
             ) {
                 Column(
                     modifier = Modifier
@@ -536,11 +583,11 @@ fun HomeScreen(
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Create a Group", fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, color = SaturnInk)
+                    Text("Create a Group", fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, color = primaryInk)
                     OutlinedTextField(
                         value = groupName,
                         onValueChange = { groupName = it },
-                        placeholder = { Text("Group name...", color = SaturnSecondaryText) },
+                        placeholder = { Text("Group name...", color = secondaryInk) },
                         singleLine = true,
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.fillMaxWidth()
@@ -551,7 +598,7 @@ fun HomeScreen(
                             text = "Invite Moons to Orbit",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = SaturnSecondaryText
+                            color = secondaryInk
                         )
                         availableMoons.forEach { (moonId, moonName) ->
                             val isChecked = selectedMoonIds[moonId] == true
@@ -559,8 +606,8 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(SaturnSurfaceSecondary)
-                                    .border(1.5.dp, SaturnInk, RoundedCornerShape(16.dp))
+                                    .background(cardSurfaceSecondary)
+                                    .border(1.5.dp, strokeBorder, RoundedCornerShape(16.dp))
                                     .clickable { selectedMoonIds[moonId] = !isChecked }
                                     .padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -568,7 +615,7 @@ fun HomeScreen(
                                 Text(
                                     text = moonName,
                                     fontWeight = FontWeight.Bold,
-                                    color = SaturnInk,
+                                    color = primaryInk,
                                     modifier = Modifier.weight(1f)
                                 )
                                 SaturnHandDrawnCheckbox(
@@ -607,7 +654,7 @@ fun HomeScreen(
 
             ModalBottomSheet(
                 onDismissRequest = { activeSheet = ActiveHomeSheet.NONE },
-                containerColor = SaturnSurface
+                containerColor = cardSurface
             ) {
                 Box(modifier = Modifier.fillMaxWidth()) {
                     SaturnAnimatedGridBackground(modifier = Modifier.matchParentSize())
@@ -619,14 +666,14 @@ fun HomeScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Text("Your Profile", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = SaturnInk)
+                        Text("Your Profile", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = primaryInk)
 
                         Box(
                             modifier = Modifier
                                 .size(88.dp)
                                 .clip(CircleShape)
                                 .background(SaturnYellow)
-                                .border(2.dp, SaturnInk, CircleShape)
+                                .border(2.dp, strokeBorder, CircleShape)
                                 .clickable { avatarPickerLauncher.launch("image/*") },
                             contentAlignment = Alignment.Center
                         ) {
@@ -647,14 +694,14 @@ fun HomeScreen(
                                 )
                             }
                         }
-                        Text("Tap circle to upload photo", fontSize = 12.sp, color = SaturnSecondaryText)
+                        Text("Tap circle to upload photo", fontSize = 12.sp, color = secondaryInk)
 
                         if (editedName.isNotBlank()) {
                             SaturnTypingText(
                                 fullText = editedName,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = SaturnInk
+                                color = primaryInk
                             )
                         }
 
@@ -668,7 +715,7 @@ fun HomeScreen(
                         )
 
                         Surface(
-                            color = SaturnSurfaceSecondary,
+                            color = cardSurfaceSecondary,
                             shape = RoundedCornerShape(16.dp),
                             border = BorderStroke(1.5.dp, SaturnSand),
                             modifier = Modifier.fillMaxWidth()
@@ -678,16 +725,50 @@ fun HomeScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("Your Unique Username", fontSize = 12.sp, color = SaturnSecondaryText)
+                                    Text("Your Unique Username", fontSize = 12.sp, color = secondaryInk)
                                     SaturnTypingText(
                                         fullText = uniqueUsername,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 16.sp,
-                                        color = SaturnInk,
+                                        color = primaryInk,
                                         charDelayMs = 45L
                                     )
                                 }
-                                Icon(Icons.Default.Verified, contentDescription = null, tint = SaturnInk)
+                                Icon(Icons.Default.Verified, contentDescription = null, tint = primaryInk)
+                            }
+                        }
+
+                        Surface(
+                            color = cardSurfaceSecondary,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.5.dp, SaturnSand),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = if (isDarkTheme) Icons.Default.DarkMode else Icons.Default.LightMode,
+                                    contentDescription = null,
+                                    tint = primaryInk
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Appearance", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = primaryInk)
+                                    Text(
+                                        text = if (isDarkTheme) "Dark Mode (Ink)" else "Light Mode (Paper)",
+                                        fontSize = 12.sp,
+                                        color = secondaryInk
+                                    )
+                                }
+                                Switch(
+                                    checked = isDarkTheme,
+                                    onCheckedChange = { checked ->
+                                        isDarkTheme = checked
+                                        themePrefs.edit().putBoolean("is_dark_theme", checked).apply()
+                                    }
+                                )
                             }
                         }
 
@@ -710,7 +791,7 @@ fun HomeScreen(
         ActiveHomeSheet.ABOUT_SATURN -> {
             ModalBottomSheet(
                 onDismissRequest = { activeSheet = ActiveHomeSheet.NONE },
-                containerColor = SaturnPaper
+                containerColor = bgPaper
             ) {
                 Box(modifier = Modifier.fillMaxWidth()) {
                     SaturnAnimatedGridBackground(modifier = Modifier.matchParentSize())
@@ -734,20 +815,20 @@ fun HomeScreen(
                             text = "Saturn",
                             fontSize = 26.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = SaturnInk
+                            color = primaryInk
                         )
 
                         SaturnTypingText(
                             fullText = "A little more human.",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = SaturnSecondaryText
+                            color = secondaryInk
                         )
 
                         Surface(
-                            color = SaturnSurface,
+                            color = cardSurface,
                             shape = RoundedCornerShape(22.dp),
-                            border = BorderStroke(2.dp, SaturnInk),
+                            border = BorderStroke(2.dp, strokeBorder),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
@@ -758,29 +839,35 @@ fun HomeScreen(
                                     text = "Our Goal",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp,
-                                    color = SaturnInk
+                                    color = primaryInk
                                 )
                                 Text(
                                     text = "Saturn brings people closer together for simple, private, and meaningful conversations—wherever you are.",
                                     fontSize = 14.sp,
-                                    color = SaturnInk,
+                                    color = primaryInk,
                                     lineHeight = 20.sp
                                 )
                                 HorizontalDivider(color = SaturnSand)
                                 Text(
-                                    text = "Created by $founderName",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp,
-                                    color = SaturnSecondaryText
+                                    text = "Founders",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = secondaryInk
+                                )
+                                Text(
+                                    text = founderNames,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = primaryInk
                                 )
                             }
                         }
 
                         Text(
-                            text = "Say hi to the creator",
+                            text = "Connect with the founders",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = SaturnSecondaryText
+                            color = secondaryInk
                         )
                         SaturnCreatorDock(
                             links = creatorDockLinks,
@@ -811,10 +898,16 @@ fun SaturnSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
     placeholder: String = "Search Moons & groups...",
+    isDarkTheme: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val isActive = isFocused || query.isNotEmpty()
+
+    val barSurface = if (isDarkTheme) SaturnDarkSurface else SaturnSurface
+    val barBorder = if (isActive) Color(0xFF15A986) else if (isDarkTheme) SaturnSand else SaturnInk
+    val barText = if (isDarkTheme) SaturnPaper else SaturnInk
+    val barHint = if (isDarkTheme) SaturnSand else SaturnSecondaryText
 
     val iconRotation by animateFloatAsState(
         targetValue = if (isActive) 80f else 0f,
@@ -837,10 +930,10 @@ fun SaturnSearchBar(
             .fillMaxWidth()
             .height(50.dp),
         shape = RoundedCornerShape(100.dp),
-        color = SaturnSurface,
+        color = barSurface,
         border = BorderStroke(
             width = 1.5.dp,
-            color = if (isActive) Color(0xFF15A986) else SaturnInk
+            color = barBorder
         )
     ) {
         Row(
@@ -873,7 +966,7 @@ fun SaturnSearchBar(
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search",
-                        tint = SaturnInk,
+                        tint = barText,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -886,7 +979,7 @@ fun SaturnSearchBar(
                 onValueChange = onQueryChange,
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = SaturnInk,
+                    color = barText,
                     fontSize = 15.sp
                 ),
                 modifier = Modifier
@@ -897,7 +990,7 @@ fun SaturnSearchBar(
                         Text(
                             text = placeholder,
                             fontSize = 15.sp,
-                            color = SaturnSecondaryText
+                            color = barHint
                         )
                     }
                     innerTextField()
@@ -918,7 +1011,7 @@ fun SaturnSearchBar(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Clear search",
-                        tint = SaturnInk,
+                        tint = barText,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -1013,15 +1106,21 @@ fun SaturnHandDrawnCheckbox(
 @Composable
 private fun MoonOrGroupRow(
     item: SaturnThreadItem,
+    isDarkTheme: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    val rowBg = if (isDarkTheme) SaturnDarkSurface else SaturnSurface
+    val rowBorder = if (isDarkTheme) SaturnSand else SaturnInk
+    val titleColor = if (isDarkTheme) SaturnPaper else SaturnInk
+    val subColor = if (isDarkTheme) SaturnSand else SaturnSecondaryText
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(SaturnSurface)
-            .border(1.5.dp, SaturnInk, RoundedCornerShape(20.dp))
+            .background(rowBg)
+            .border(1.5.dp, rowBorder, RoundedCornerShape(20.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
@@ -1057,7 +1156,7 @@ private fun MoonOrGroupRow(
                     text = item.title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
-                    color = SaturnInk,
+                    color = titleColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
@@ -1077,7 +1176,7 @@ private fun MoonOrGroupRow(
                     Icon(
                         imageVector = Icons.Default.PushPin,
                         contentDescription = "Pinned",
-                        tint = SaturnSecondaryText,
+                        tint = subColor,
                         modifier = Modifier.size(14.dp)
                     )
                 }
@@ -1086,7 +1185,7 @@ private fun MoonOrGroupRow(
             Text(
                 text = item.subtitle,
                 fontSize = 14.sp,
-                color = SaturnSecondaryText,
+                color = subColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1097,7 +1196,7 @@ private fun MoonOrGroupRow(
                 Text(
                     text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(item.timestamp)),
                     fontSize = 11.sp,
-                    color = SaturnSecondaryText
+                    color = subColor
                 )
             }
             if (item.unreadCount > 0) {
